@@ -5,7 +5,7 @@
 //it does this by computing a running sum for each column within the radius, then averaging that sum.  Then the same for 
 //each row.  This should allow it to be easily parallelized by column then by row, since each call is independent.
 
-//cudablur -> Gia Bugieda 
+//Gia Bugieda and Addison Kuykendall
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,12 +25,8 @@
 //            rad: the width of the blur
 //            bpp: The bits per pixel in the src image
 //Returns: None
-__global__ void computeRow(float* src,float* dest,int pWidth,int height,int radius,int bpp){
+void computeRow(float* src,float* dest,int row,int pWidth,int radius,int bpp){
     int i;
-    int row = (blockIdx.y * blockDim.y) + threadIdx.y;
-    if (row > height){
-        return;
-    }
     int bradius=radius*bpp;
     //initialize the first bpp elements so that nothing fails
     for (i=0;i<bpp;i++)
@@ -63,8 +59,8 @@ __global__ void computeRow(float* src,float* dest,int pWidth,int height,int radi
 __global__ void computeColumn(uint8_t* src,float* dest,int pWidth,int height,int radius,int bpp){
     int i;
     int col = (blockIdx.x * blockDim.x) + threadIdx.x;
-    printf("col: %d", col);
-    if (col > pWidth){
+    //printf("col: %d", col);
+    if (col >= pWidth){
         return;
     }
     //initialize the first element of each column
@@ -115,24 +111,24 @@ int main(int argc,char** argv){
     cudaMallocManaged(&mid,sizeof(float)*pWidth*height);   
     cudaMallocManaged(&dest,sizeof(float)*pWidth*height);   
     cudaMallocManaged(&img2,sizeof(uint8_t)*pWidth*height);
-    cudaMemcpy(&img2, &img, sizeof(uint8_t)*pWidth*height, cudaMemcpyHostToDevice);
+    cudaMemcpy(img2, img, sizeof(uint8_t)*pWidth*height, cudaMemcpyHostToDevice);
  
     
     int blockSize = 256;
-    dim3 threadsPerBlock(radius,radius);
+    //dim3 threadsPerBlock(16, 16);
     int numBlocks = (pWidth + blockSize - 1)/blockSize;
 
     t1=time(NULL);
-    computeColumn<<<numBlocks,threadsPerBlock>>>(img2,mid,pWidth,height,radius,bpp);
+    computeColumn<<<numBlocks,blockSize>>>(img2,mid,pWidth,height,radius,bpp);
    
     cudaDeviceSynchronize();
 
     numBlocks = (height + blockSize - 1)/blockSize;
     stbi_image_free(img); //done with image
-    computeRow<<<numBlocks,threadsPerBlock>>>(mid,dest,pWidth,height,radius,bpp);
-   
+    for (i=0;i<height;i++){
+        computeRow(mid,dest,i,pWidth,radius,bpp);
+    }   
     t2=time(NULL);
-
     cudaFree(mid); //done with mid
 
     //now back to int8 so we can save it
