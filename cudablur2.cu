@@ -5,7 +5,7 @@
 //it does this by computing a running sum for each column within the radius, then averaging that sum.  Then the same for 
 //each row.  This should allow it to be easily parallelized by column then by row, since each call is independent.
 
-
+//cudablur -> Gia Bugieda 
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,8 +25,12 @@
 //            rad: the width of the blur
 //            bpp: The bits per pixel in the src image
 //Returns: None
-void computeRow(float* src,float* dest,int row,int pWidth,int radius,int bpp){
+__global__ void computeRow(float* src,float* dest,int pWidth,int height,int radius,int bpp){
     int i;
+    int row = (blockIdx.y * blockDim.y) + threadIdx.y;
+    if (row > height){
+        return;
+    }
     int bradius=radius*bpp;
     //initialize the first bpp elements so that nothing fails
     for (i=0;i<bpp;i++)
@@ -56,8 +60,13 @@ void computeRow(float* src,float* dest,int row,int pWidth,int radius,int bpp){
 //            radius: the width of the blur
 //            bpp: The bits per pixel in the src image
 //Returns: None
-void computeColumn(uint8_t* src,float* dest,int col,int pWidth,int height,int radius,int bpp){
+__global__ void computeColumn(uint8_t* src,float* dest,int pWidth,int height,int radius,int bpp){
     int i;
+    int col = (blockIdx.x * blockDim.x) + threadIdx.x;
+    printf("col: %d", col);
+    if (col > pWidth){
+        return;
+    }
     //initialize the first element of each column
     dest[col]=src[col];
     //start tue sum up to radius*2 by only adding
@@ -91,7 +100,7 @@ int main(int argc,char** argv){
     int i;
     int width,height,bpp,pWidth;
     char* filename;
-    uint8_t *img;
+    uint8_t *img,*img2;
     float* dest,*mid;
 
     if (argc!=3)
@@ -103,27 +112,37 @@ int main(int argc,char** argv){
 
     pWidth=width*bpp;  //actual width in bytes of an image row
 
-    mid=malloc(sizeof(float)*pWidth*height);   
-    dest=malloc(sizeof(float)*pWidth*height);   
+    cudaMallocManaged(&mid,sizeof(float)*pWidth*height);   
+    cudaMallocManaged(&dest,sizeof(float)*pWidth*height);   
+    cudaMallocManaged(&img2,sizeof(uint8_t)*pWidth*height);
+    cudaMemcpy(&img2, &img, sizeof(uint8_t)*pWidth*height, cudaMemcpyHostToDevice);
+ 
+    
+    int blockSize = 256;
+    dim3 threadsPerBlock(radius,radius);
+    int numBlocks = (pWidth + blockSize - 1)/blockSize;
 
     t1=time(NULL);
-    for (i=0;i<pWidth;i++){
-         computeColumn(img,mid,i,pWidth,height,radius,bpp);
-    }  
+    computeColumn<<<numBlocks,threadsPerBlock>>>(img2,mid,pWidth,height,radius,bpp);
+   
+    cudaDeviceSynchronize();
+
+    numBlocks = (height + blockSize - 1)/blockSize;
     stbi_image_free(img); //done with image
-    for (i=0;i<height;i++){
-        computeRow(mid,dest,i,pWidth,radius,bpp);
-    }
+    computeRow<<<numBlocks,threadsPerBlock>>>(mid,dest,pWidth,height,radius,bpp);
+   
     t2=time(NULL);
-    free(mid); //done with mid
+
+    cudaFree(mid); //done with mid
 
     //now back to int8 so we can save it
-    img=malloc(sizeof(uint8_t)*pWidth*height);
+    cudaMallocManaged(&img,sizeof(uint8_t)*pWidth*height);
     for (i=0;i<pWidth*height;i++){
         img[i]=(uint8_t)dest[i];
     }
-    free(dest);   
+    cudaFree(dest);   
     stbi_write_png("output.png",width,height,bpp,img,bpp*width);
-    free(img);
+    cudaFree(img);
+    cudaFree(img2);
     printf("Blur with radius %d complete in %ld seconds\n",radius,t2-t1);
 }
