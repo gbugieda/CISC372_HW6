@@ -114,6 +114,8 @@ int main(int argc,char** argv){
 
     pWidth=width*bpp;  //actual width in bytes of an image row
 
+    t1=time(NULL);
+
     cudaMallocManaged(&mid,sizeof(float)*pWidth*height);   
     cudaMallocManaged(&dest,sizeof(float)*pWidth*height);   
     cudaMalloc(&img2,sizeof(uint8_t)*pWidth*height);
@@ -121,10 +123,9 @@ int main(int argc,char** argv){
  
     
     int blockSize = 256;
-    //dim3 threadsPerBlock(16, 16);
     int numBlocks = (pWidth + blockSize - 1)/blockSize;
 
-    t1=time(NULL);
+    
     computeColumn<<<numBlocks,blockSize>>>(img2,mid,pWidth,height,radius,bpp);
    
     cudaDeviceSynchronize();

@@ -103,7 +103,7 @@ int main(int argc,char** argv){
     int width,height,bpp,pWidth;
     char* filename;
     uint8_t *img,*img2;
-    float* dest,*mid;
+    float* dest,*mid, *h_dest;
 
     if (argc!=3)
         return Usage(argv[0]);
@@ -114,17 +114,18 @@ int main(int argc,char** argv){
 
     pWidth=width*bpp;  //actual width in bytes of an image row
 
-    cudaMallocManaged(&mid,sizeof(float)*pWidth*height);   
-    cudaMallocManaged(&dest,sizeof(float)*pWidth*height);   
+    t1=time(NULL);
+
+    cudaMalloc(&mid,sizeof(float)*pWidth*height);   
+    cudaMalloc(&dest,sizeof(float)*pWidth*height);   
     cudaMalloc(&img2,sizeof(uint8_t)*pWidth*height);
     cudaMemcpy(img2, img, sizeof(uint8_t)*pWidth*height, cudaMemcpyHostToDevice);
- 
     
+
     int blockSize = 256;
-    //dim3 threadsPerBlock(16, 16);
     int numBlocks = (pWidth + blockSize - 1)/blockSize;
 
-    t1=time(NULL);
+    
     computeColumn<<<numBlocks,blockSize>>>(img2,mid,pWidth,height,radius,bpp);
    
     cudaDeviceSynchronize();
@@ -132,18 +133,25 @@ int main(int argc,char** argv){
     numBlocks = (height + blockSize - 1)/blockSize;
     stbi_image_free(img); //done with image
     computeRow<<<numBlocks,blockSize>>>(mid,dest,pWidth,height,radius,bpp);
-   cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
+
     t2=time(NULL);
+
+    //cudaMemcpy(h_mid, mid, sizeof(float)*pWidth*height, cudaMemcpyDeviceToHost);
     cudaFree(mid); //done with mid
 
     //now back to int8 so we can save it
-    cudaMallocManaged(&img,sizeof(uint8_t)*pWidth*height);
+    img=(uint8_t*)malloc(sizeof(uint8_t)*pWidth*height);
+    h_dest = (float*)malloc(sizeof(float)*pWidth*height);
+
+    cudaMemcpy(h_dest, dest, sizeof(float)*pWidth*height, cudaMemcpyDeviceToHost);
     for (i=0;i<pWidth*height;i++){
-        img[i]=(uint8_t)dest[i];
+        img[i]=(uint8_t)h_dest[i];
     }
     cudaFree(dest);   
     stbi_write_png("output.png",width,height,bpp,img,bpp*width);
     cudaFree(img);
     cudaFree(img2);
+    free(h_dest);
     printf("Blur with radius %d complete in %ld seconds\n",radius,t2-t1);
 }
