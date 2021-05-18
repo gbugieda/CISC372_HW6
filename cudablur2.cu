@@ -16,6 +16,8 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
+//Gia Bugieda and Addison Kuykendall
+
 //Computes a single row of the destination image by summing radius pixels
 //Parameters: src: Teh src image as width*height*bpp 1d array
 //            dest: pre-allocated array of size width*height*bpp to receive summed row
@@ -130,7 +132,7 @@ int main(int argc,char** argv){
     numBlocks = (height + blockSize - 1)/blockSize;
     stbi_image_free(img); //done with image
     computeRow<<<numBlocks,blockSize>>>(mid,dest,pWidth,height,radius,bpp);
-   
+   cudaDeviceSynchronize();
     t2=time(NULL);
     cudaFree(mid); //done with mid
 
