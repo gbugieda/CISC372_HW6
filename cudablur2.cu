@@ -5,7 +5,6 @@
 //it does this by computing a running sum for each column within the radius, then averaging that sum.  Then the same for 
 //each row.  This should allow it to be easily parallelized by column then by row, since each call is independent.
 
-//Gia Bugieda and Addison Kuykendall
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,26 +24,31 @@
 //            rad: the width of the blur
 //            bpp: The bits per pixel in the src image
 //Returns: None
-void computeRow(float* src,float* dest,int row,int pWidth,int radius,int bpp){
+__global__ void computeRow(float* src,float* dest,int pWidth,int height,int radius,int bpp){
     int i;
+    int row = (blockIdx.x * blockDim.x) + threadIdx.x;
+    if (row >= height){
+        return;
+    }
     int bradius=radius*bpp;
-    //initialize the first bpp elements so that nothing fails
-    for (i=0;i<bpp;i++)
-        dest[row*pWidth+i]=src[row*pWidth+i];
-    //start the sum up to radius*2 by only adding (nothing to subtract yet)
-    for (i=bpp;i<bradius*2*bpp;i++)
-        dest[row*pWidth+i]=src[row*pWidth+i]+dest[row*pWidth+i-bpp];
-     for (i=bradius*2+bpp;i<pWidth;i++)
-        dest[row*pWidth+i]=src[row*pWidth+i]+dest[row*pWidth+i-bpp]-src[row*pWidth+i-2*bradius-bpp];
-    //now shift everything over by radius spaces and blank out the last radius items to account for sums at the end of the kernel, instead of the middle
-    for (i=bradius;i<pWidth;i++){
-        dest[row*pWidth+i-bradius]=dest[row*pWidth+i]/(radius*2+1);
-    }
-    //now the first and last radius values make no sense, so blank them out
-    for (i=0;i<bradius;i++){
-        dest[row*pWidth+i]=0;
-        dest[(row+1)*pWidth-1-i]=0;
-    }
+        //initialize the first bpp elements so that nothing fails
+        for (i=0;i<bpp;i++)
+            dest[row*pWidth+i]=src[row*pWidth+i];
+        //start the sum up to radius*2 by only adding (nothing to subtract yet)
+        for (i=bpp;i<bradius*2*bpp;i++)
+            dest[row*pWidth+i]=src[row*pWidth+i]+dest[row*pWidth+i-bpp];
+        for (i=bradius*2+bpp;i<pWidth;i++)
+            dest[row*pWidth+i]=src[row*pWidth+i]+dest[row*pWidth+i-bpp]-src[row*pWidth+i-2*bradius-bpp];
+        //now shift everything over by radius spaces and blank out the last radius items to account for sums at the end of the kernel, instead of the middle
+        for (i=bradius;i<pWidth;i++){
+            dest[row*pWidth+i-bradius]=dest[row*pWidth+i]/(radius*2+1);
+        }
+        //now the first and last radius values make no sense, so blank them out
+        for (i=0;i<bradius;i++){
+            dest[row*pWidth+i]=0;
+            dest[(row+1)*pWidth-1-i]=0;
+        }
+    
 }
 
 //Computes a single column of the destination image by summing radius pixels
@@ -110,7 +114,7 @@ int main(int argc,char** argv){
 
     cudaMallocManaged(&mid,sizeof(float)*pWidth*height);   
     cudaMallocManaged(&dest,sizeof(float)*pWidth*height);   
-    cudaMallocManaged(&img2,sizeof(uint8_t)*pWidth*height);
+    cudaMalloc(&img2,sizeof(uint8_t)*pWidth*height);
     cudaMemcpy(img2, img, sizeof(uint8_t)*pWidth*height, cudaMemcpyHostToDevice);
  
     
@@ -125,9 +129,8 @@ int main(int argc,char** argv){
 
     numBlocks = (height + blockSize - 1)/blockSize;
     stbi_image_free(img); //done with image
-    for (i=0;i<height;i++){
-        computeRow(mid,dest,i,pWidth,radius,bpp);
-    }   
+    computeRow<<<numBlocks,blockSize>>>(mid,dest,pWidth,height,radius,bpp);
+   
     t2=time(NULL);
     cudaFree(mid); //done with mid
 
