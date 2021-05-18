@@ -122,7 +122,7 @@ int main(int argc,char** argv){
     cudaMemcpy(img2, img, sizeof(uint8_t)*pWidth*height, cudaMemcpyHostToDevice);
     
 
-    int blockSize = 256;
+    int blockSize = 1024;
     int numBlocks = (pWidth + blockSize - 1)/blockSize;
 
     
